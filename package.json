@@ -1,0 +1,29 @@
+{
+  "name": "train-booking-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "run": "node ./src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "description": "",
+  "packageManager": "pnpm@10.2.1+sha512.398035c7bd696d0ba0b10a688ed558285329d27ea994804a52bad9167d8e3a72bcb993f9699585d3ca25779ac64949ef422757a6c31102c12ab932e5cbe5cc92",
+  "devDependencies": {
+    "prettier": "^3.4.2"
+  },
+  "dependencies": {
+    "@inquirer/input": "^4.1.5",
+    "@inquirer/prompts": "^7.3.1",
+    "@inquirer/select": "^4.0.8",
+    "command-line-args": "^6.0.1",
+    "commander": "^13.1.0",
+    "cookie": "^1.0.2",
+    "got": "^14.4.5",
+    "libphonenumber-js": "^1.11.19",
+    "luxon": "^3.5.0",
+    "open": "^10.1.0"
+  }
+}
