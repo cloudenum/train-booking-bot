@@ -464,7 +464,6 @@ export const TravelokaService = {
    *  minPrice: number,
    *  maxPrice: number,
    *  departTimes: string[],
-   *  onlyAvailable: boolean,
    *  onlyDirect: boolean,
    *  sortBy: string
    * }} options
@@ -480,12 +479,19 @@ export const TravelokaService = {
       minPrice,
       maxPrice,
       departTimes,
-      onlyAvailable,
       onlyDirect,
       sortBy,
     },
   ) {
     let exitCode = 0;
+
+    if (options.minPrice && typeof options.minPrice !== "number") {
+      options.minPrice = Number(options.minPrice);
+    }
+
+    if (options.maxPrice && typeof options.maxPrice !== "number") {
+      options.maxPrice = Number(options.maxPrice);
+    }
 
     console.log(options);
 

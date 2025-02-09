@@ -24,13 +24,13 @@ program
       "Departure times to filter by",
     ).choices(["morning", "afternoon", "evening", "night"]),
   )
-  .option("--only-available", "Only show available tickets", false)
   .option("--only-direct", "Only show direct trains", false)
   .addOption(
-    new Option(
-      "--sort-by <sortBy>",
-      "Sort by price, earliest_depart_time, or latest_depart_time",
-    ).choices(["price", "earliest_depart_time", "latest_depart_time"]),
+    new Option("--sort-by <sortBy>", "Sort by").choices([
+      "price",
+      "earliest_depart_time",
+      "latest_depart_time",
+    ]),
   )
   .addOption(
     new Option("--title <title>", "Passenger title").choices([
