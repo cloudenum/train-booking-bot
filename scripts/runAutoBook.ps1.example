@@ -6,15 +6,15 @@ function bookAt {
 
     Write-Host "Booking at $departureDate $departTimes"
 
-    $result = node "./src/index.js" -o <origin> -d <destination> -t $departureDate --title MR --full-name "" --email "email@mail.com" --phone-number "081234567890" --national-id "" --depart-times $departTimes --max-price 300000 --sort-by price
+    node "./src/index.js" -o <origin> -d <destination> -t $departureDate --title MR --full-name "" --email "email@mail.com" --phone-number "081234567890" --national-id "" --depart-times $departTimes --max-price 300000 --sort-by price | Out-Host
 
-    if ($result -eq 0) {
+    if ($LASTEXITCODE -eq 0) {
         Write-Host "Booking success"
     } else {
         Write-Host "Booking failed"
     }
 
-    return $result
+    return $LASTEXITCODE
 }
 
 $result = bookAt "2025-03-28" "evening"

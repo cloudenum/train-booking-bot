@@ -280,6 +280,8 @@ export const TravelokaService = {
       json: payload,
     });
 
+    console.info(`API response: ${response.url} ${response.statusCode}`);
+
     if (response && response.ok) {
       refreshCookies(response);
 
@@ -289,7 +291,6 @@ export const TravelokaService = {
       }
     }
 
-    console.info(`API response: ${response.url} ${response.statusCode}`);
     throw new Error("Failed to pre-booking");
   },
 
@@ -422,6 +423,8 @@ export const TravelokaService = {
       json: payload,
     });
 
+    console.info(`API response: ${response.url} ${response.statusCode}`);
+
     if (response && response.ok) {
       refreshCookies(response);
 
@@ -443,14 +446,18 @@ export const TravelokaService = {
    * @returns {Promise<void>}
    */
   async openPaymentPageInBrowser(invoiceId, auth, payAuth) {
-    const url = `${travelokaConfig.baseUrl}/payment/selection`;
+    let url = `${travelokaConfig.baseUrl}/payment/selection`;
     const queryParams = new URLSearchParams({
       invoiceId,
       auth,
       payAuth,
     });
 
-    await open(`${url}?${queryParams.toString()}`);
+    url = `${url}?${queryParams.toString()}`;
+    await open(url);
+
+    console.info(`If the browser does not open, please open this link below`);
+    console.info(url);
   },
 
   /**
@@ -702,7 +709,7 @@ export const TravelokaService = {
         );
 
         if (!preBooking || !preBooking.trackingSpec) {
-          throw new Error("Failed to get pre-booking details");
+          throw new Error("No pre-booking data returned");
         }
 
         trackingSpec = preBooking.trackingSpec;
@@ -721,7 +728,7 @@ export const TravelokaService = {
         );
 
         if (!booking) {
-          throw new Error("Failed to create booking");
+          throw new Error("No booking data returned");
         }
 
         trackingSpec = booking.trackingSpec;
