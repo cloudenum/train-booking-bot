@@ -1,0 +1,26 @@
+#!/bin/bash
+
+function bookAt {
+    local departureDate=$1
+    local departTimes=$2
+
+    echo "Booking at ${departureDate} ${departTimes}"
+
+    node "./src/index.js" -o <origin> -d <destination> -t "${departureDate}" --title MR --full-name "John Doe" --email "email@example.com" --phone-number "081234567890" --national-id "330..." --depart-times "${departTimes}" --max-price 300000 --sort-by price
+    local result=$?
+    if [ ${result} -eq 0 ]; then
+        echo "Booking success"
+    else
+        echo "Booking failed"
+    fi
+    return ${result}
+}
+
+bookAt "2025-03-28" "evening"
+result=$?
+if [ ${result} -gt 0 ]; then
+    bookAt "2025-03-29" "morning"
+fi
+
+read -rsp "Press any key to exit . . ." -n1
+echo

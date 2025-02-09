@@ -656,6 +656,7 @@ export const TravelokaService = {
 
     console.log(`Found ${trains.length} available trains`);
 
+    let success = false;
     for (const train of trains) {
       await delay(1000);
 
@@ -741,6 +742,7 @@ export const TravelokaService = {
           booking.payAuth,
         );
 
+        success = true;
         break;
       } catch (error) {
         console.error(error.message);
@@ -748,6 +750,10 @@ export const TravelokaService = {
           `Failed to book train ${train.trainBrandLabel} ${train.ticketLabel}`,
         );
       }
+    }
+
+    if (!success) {
+      exitCode = 1;
     }
 
     console.log("Done");

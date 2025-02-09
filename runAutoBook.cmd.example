@@ -1,1 +1,0 @@
-node "./src/index.js" -o <origin> -d <destination> -t <depart-time> --title MR --full-name "" --email "email@mail.com" --phone-number "081234567890" --national-id "" --depart-times evening --max-price 300000 --sort-by price

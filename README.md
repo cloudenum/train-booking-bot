@@ -50,7 +50,9 @@ node ./src/index.js -o PSE -d LPY -t "2025-03-28"  --max-price 300000 --depart-t
 
 You can use a scheduler to run a script with the bot command.
 
-Here is an example script:
+There are some script examples to get you started in the [`scripts`](/scripts) directory.
+
+Here is a simple example:
 
 ```bash
 node "./src/index.js" -d PSE -o LPY -t "2025-03-28" --title MR --full-name "John Doe" --email "email@example.com" --phone-number "081234567890" --national-id "330..." --depart-times morning --max-price 300000 --sort-by price

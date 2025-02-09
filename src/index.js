@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-import readline from "node:readline";
-import { stdin, stdout } from "node:process";
 import { Command, InvalidOptionArgumentError, Option } from "commander";
 import { input, select } from "@inquirer/prompts";
 import { Passenger, TravelokaService } from "./Services/TravelokaService.js";
@@ -158,17 +156,5 @@ if (
   // Call the auto-booking service with command-line options and passenger info
   const exitCode = await TravelokaService.AutoBookTicket(passenger, options);
 
-  if (exitCode !== 0) {
-    process.exit(exitCode);
-  }
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  rl.question("Press any key to exit ...", () => {
-    rl.close();
-    process.exit(0);
-  });
+  process.exit(exitCode);
 })();

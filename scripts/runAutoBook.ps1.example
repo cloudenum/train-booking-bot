@@ -1,0 +1,27 @@
+function bookAt {
+    param(
+        [string]$departureDate,
+        [string[]]$departTimes
+    )
+
+    Write-Host "Booking at $departureDate $departTimes"
+
+    $result = node "./src/index.js" -o <origin> -d <destination> -t $departureDate --title MR --full-name "" --email "email@mail.com" --phone-number "081234567890" --national-id "" --depart-times $departTimes --max-price 300000 --sort-by price
+
+    if ($result -eq 0) {
+        Write-Host "Booking success"
+    } else {
+        Write-Host "Booking failed"
+    }
+
+    return $result
+}
+
+$result = bookAt "2025-03-28" "evening"
+
+if ($result -gt 0) {
+    $result = bookAt "2025-03-29" "morning"
+}
+
+Write-Host "Press any key to exit ..."
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

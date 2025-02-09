@@ -1,0 +1,28 @@
+@echo off
+
+call :bookAt "2025-03-28" "evening"
+set result=%ERRORLEVEL%
+
+if %result% gtr 0 (
+    call :bookAt "2025-03-29" "morning"
+)
+
+echo Press any key to exit...
+pause >nul
+exit /b
+
+:bookAt
+set "departureDate=%~1"
+set "departTimes=%~2"
+
+echo Booking at %departureDate% %departTimes%
+
+node "./src/index.js" -o <origin> -d %departureDate% -t <depart-time> --title MR --full-name "John Doe" --email "email@mail.com" --phone-number "081234567890" --national-id "3300..." --depart-times %departTimes% --max-price 300000 --sort-by price
+
+set result=%ERRORLEVEL%
+if %result%==0 (
+    echo Booking success
+) else (
+    echo Booking failed
+)
+exit /b %result%
