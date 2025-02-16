@@ -1,10 +1,27 @@
 #!/usr/bin/env node
-import { Command, InvalidOptionArgumentError, Option } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 import { input, select } from "@inquirer/prompts";
-import { Passenger, TravelokaService } from "./Services/TravelokaService.js";
+import { Passenger } from "./Models/Passenger.js";
+import { TravelokaService } from "./Services/TravelokaService.js";
+// import { TiketDotComService } from "./Services/TiketDotComService.js";
 import { parsePhoneNumber } from "./Utils/PhoneNumber.js";
+import {
+  validateDepartureDate,
+  validateEmail,
+  validateFullName,
+  validateNameTitle,
+  validateNationalId,
+  validatePhoneNumber,
+} from "./Utils/Validation.js";
+import { processProgramOptions } from "./Utils/Args.js";
 
 const program = new Command();
+
+const ServiceProvider = {
+  KAI: "kai",
+  TRAVELOKA: "traveloka",
+  TIKETDOTCOM: "tiket.com",
+};
 
 program
   .requiredOption("-o, --origin <origin>", "Origin station code")
@@ -12,6 +29,11 @@ program
   .requiredOption(
     "-t, --departure-date <date>",
     "Departure date in YYYY-MM-DD format",
+  )
+  .addOption(
+    new Option("-p, --provider <provider>", "Provider")
+      .choices(Object.values(ServiceProvider))
+      .default(ServiceProvider.TRAVELOKA),
   )
   .option("--train-names <trainNames...>", "Train names to filter by", [])
   .option("--min-price <minPrice>", "Minimum price to filter by")
@@ -31,6 +53,16 @@ program
     ]),
   )
   .addOption(
+    new Option("--random-pick", "Randomly pick a train")
+      .default(false)
+      .conflicts("pickFirst"),
+  )
+  .addOption(
+    new Option("--pick-first", "Pick the first train")
+      .default(false)
+      .conflicts("randomPick"),
+  )
+  .addOption(
     new Option("--title <title>", "Passenger title").choices([
       "MR",
       "MRS",
@@ -45,16 +77,51 @@ program
   .addOption(new Option("--national-id <nationalId>", "Passenger national ID"))
   .parse(process.argv);
 
-const options = program.opts();
+const options = processProgramOptions(program.opts());
 
-if (
-  options.minPrice &&
-  options.maxPrice &&
-  options.minPrice > options.maxPrice
-) {
-  throw new InvalidOptionArgumentError(
-    "Minimum price must be less than maximum price",
-  );
+console.debug(options);
+
+try {
+  if (!validateDepartureDate(options.departureDate)) {
+    throw new InvalidArgumentError(
+      "Departure date should be valid and in the future or today",
+    );
+  }
+
+  if (
+    options.minPrice &&
+    options.maxPrice &&
+    options.minPrice > options.maxPrice
+  ) {
+    throw new InvalidArgumentError(
+      "Minimum price must be less than maximum price",
+    );
+  }
+
+  if (options.title && !validateNameTitle(options.title)) {
+    throw new InvalidArgumentError("Title must be one of MR, MRS, MS");
+  }
+
+  if (options.fullName && !validateFullName(options.fullName)) {
+    throw new InvalidArgumentError("Full name must not be empty");
+  }
+
+  if (options.email && !validateEmail(options.email)) {
+    throw new InvalidArgumentError("Invalid email");
+  }
+
+  if (options.phoneNumber && !validatePhoneNumber(options.phoneNumber)) {
+    throw new InvalidArgumentError("Invalid phone number");
+  }
+
+  if (options.nationalId && !validateNationalId(options.nationalId)) {
+    throw new InvalidArgumentError("National ID number must be 16 digits");
+  }
+} catch (error) {
+  program.error(`error: ${error.message}`, {
+    code: "INVALID_ARGUMENT",
+    exitCode: 1,
+  });
 }
 
 (async () => {
@@ -84,47 +151,30 @@ if (
       required: true,
       name: "FullName",
       message: "Full Name:",
+      validate: (input) =>
+        validateFullName(input) || "Full name must not be empty",
     },
     {
       type: input,
       required: true,
       name: "Email",
       message: "Email:",
-      validate: (input) => {
-        const emailRegex =
-          /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-        if (!emailRegex.test(input)) {
-          return "Invalid email address";
-        }
-
-        return true;
-      },
+      validate: (input) => validateEmail(input) || "Invalid email",
     },
     {
       type: input,
       required: true,
       name: "PhoneNumber",
       message: "Phone Number:",
-      validate: (input) => {
-        try {
-          parsePhoneNumber(input);
-          return true;
-        } catch (err) {
-          return err.message;
-        }
-      },
+      validate: (input) => validatePhoneNumber(input) || "Invalid phone number",
     },
     {
       type: input,
       required: true,
       name: "NationalId",
       message: "National ID Number:",
-      validate: (input) => {
-        if (input.length !== 16) {
-          return "National ID number must be 16 characters";
-        }
-        return true;
-      },
+      validate: (input) =>
+        validateNationalId(input) || "National ID number must be 16 digits",
     },
   ];
 
@@ -150,11 +200,27 @@ if (
   passenger.PhoneNumber = parsePhoneNumber(answers.PhoneNumber);
   passenger.NationalID = answers.NationalId;
 
-  console.log("Passenger Info:");
-  console.log(passenger);
+  console.info("Passenger Info:");
+  console.info(passenger);
 
-  // Call the auto-booking service with command-line options and passenger info
-  const exitCode = await TravelokaService.AutoBookTicket(passenger, options);
+  let exitCode = 0;
+  switch (options.provider) {
+    case ServiceProvider.KAI:
+      console.error("Provider not supported yet");
+      exitCode = 1;
+      break;
+    case ServiceProvider.TRAVELOKA:
+      exitCode = await TravelokaService.AutoBookTicket(passenger, options);
+      break;
+    case ServiceProvider.TIKETDOTCOM:
+      // exitCode = await TiketDotComService.AutoBookTicket(passenger, options);
+      console.error("Provider not supported yet");
+      exitCode = 1;
+      break;
+    default:
+      console.error("Invalid provider");
+      exitCode = 1;
+  }
 
   process.exit(exitCode);
 })();

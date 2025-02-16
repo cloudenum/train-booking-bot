@@ -1,42 +1,13 @@
 import got, { Options as GotOptions } from "got";
-import * as Cookie from "cookie";
 import { DateTime } from "luxon";
 import open from "open";
 import travelokaConfig from "../Config/Traveloka.js";
 import { generateRandomString } from "../Utils/String.js";
 import { delay } from "../Utils/Misc.js";
+import { getCookiesFromResponse, buildCookieHeader } from "../Utils/Cookies.js";
+import { Passenger } from "../Models/Passenger.js";
 
-/**
- * Get cookies from response headers
- *
- * @param {import("got").Response} res
- * @returns
- */
-const getCookiesFromResponse = (res) => {
-  const rawCookies = res.headers["set-cookie"];
-
-  let result = {};
-  if (rawCookies) {
-    result = rawCookies.reduce((acc, cookieStr) => {
-      return { ...acc, ...Cookie.parse(cookieStr) };
-    }, {});
-
-    const keysToRemove = ["Domain", "Path", "Expires", "Secure", "SameSite"];
-    for (const key of keysToRemove) {
-      delete result[key];
-    }
-  }
-
-  return result;
-};
-
-const buildCookieHeader = (cookies) => {
-  return Object.entries(cookies)
-    .map(([key, val]) => `${key}=${val}`)
-    .join("; ");
-};
-
-const getInitialCookies = async () => {
+const initialRequest = async () => {
   const url = `${travelokaConfig.baseApiUrl}/user/context/web`;
   const body = {
     clientInterface: "desktop",
@@ -81,20 +52,27 @@ const getInitialCookies = async () => {
   };
 
   try {
-    const res = await got(url, options);
-    return getCookiesFromResponse(res);
+    return await got(url, options);
   } catch (error) {
-    console.error(error);
+    console.error(error.message);
     return null;
   }
 };
 
-let cookiesObj = {
-  "tv-repeat-visit": true,
-  tv_user: '{"authorizationLevel":100,"id":null}',
-  countryCode: "ID",
-  ...(await getInitialCookies()),
-};
+let cookies = [
+  {
+    Key: "tv-repeat-visit",
+    Value: true,
+  },
+  {
+    Key: "tv-user",
+    Value: '{"authorizationLevel":100,"id":null}',
+  },
+  {
+    Key: "countryCode",
+    Value: "ID",
+  },
+];
 
 /**
  * Refresh cookies object with new cookies from response
@@ -104,18 +82,22 @@ let cookiesObj = {
 const refreshCookies = (res) => {
   const newCookies = getCookiesFromResponse(res);
 
-  cookiesObj = {
-    ...cookiesObj,
-    ...newCookies,
-  };
+  for (const newCookie of newCookies) {
+    const index = cookies.findIndex((cookie) => cookie.Key === newCookie.Key);
+    if (index >= 0) {
+      cookies[index] = newCookie;
+    } else {
+      cookies.push(newCookie);
+    }
+  }
 
-  defaultHeaders.Cookie = buildCookieHeader(cookiesObj);
+  defaultHeaders.Cookie = buildCookieHeader(cookies);
 };
 
 const defaultHeaders = {
   "Accept-Language": "en-US,en;q=0.9",
   Origin: "https://www.traveloka.com",
-  Cookie: buildCookieHeader(cookiesObj),
+  Cookie: buildCookieHeader(cookies),
   Referer: "https://www.traveloka.com/en-id",
   "Sec-Fetch-Dest": "empty",
   "Sec-Fetch-Mode": "cors",
@@ -128,6 +110,8 @@ const defaultHeaders = {
   "sec-ch-ua-platform": '"Windows"',
   "x-route-prefix": "en-id",
 };
+
+refreshCookies(await initialRequest());
 
 /**
  * Perform HTTP request
@@ -146,15 +130,98 @@ const doRequest = async (method, url, options) => {
       ...options.headers,
     },
     responseType: "json",
+    throwHttpErrors: false,
   };
 
-  try {
-    const response = await got(url, optionParams);
-    return response;
-  } catch (error) {
-    console.error(error.message);
-    return error.response;
+  const response = await got(url, optionParams);
+  return response;
+};
+
+/**
+ *
+ * @param {Passenger} passenger
+ * @param {object} train
+ * @param {DateTime} departureDate
+ */
+const autoBookTrainTicket = async (passenger, train, departureDate) => {
+  let hourMinute = train.departureTime.hourMinute;
+  const departHour = String(hourMinute.hour).padStart(2, "0");
+  const departMinute = String(hourMinute.minute).padStart(2, "0");
+
+  hourMinute = train.arrivalTime.hourMinute;
+  const arrivalHour = String(hourMinute.hour).padStart(2, "0");
+  const arrivalMinute = String(hourMinute.minute).padStart(2, "0");
+
+  const departTime = `${departHour}:${departMinute}`;
+  const arrivalTime = `${arrivalHour}:${arrivalMinute}`;
+
+  console.info(
+    `[${departTime} - ${arrivalTime}] [${train.ticketLabel}] ${train.trainBrandLabel} - Price: ${train.fare.currencyValue.amount}`,
+  );
+
+  let trackingSpec = {
+    contexts: {},
+    searchId: generateRandomString(9),
+    marketingContexts: {
+      ga_id: null,
+      fbp: null,
+    },
+    marketingContextCapsule: {
+      amplitude_session_id: null,
+      ga_session_id: null,
+      ga_client_id: null,
+      amplitude_device_id: null,
+      fb_browser_id_fbp: null,
+      referrer_url: null,
+      page_full_url: null,
+      client_user_agent: null,
+    },
+  };
+
+  const preBooking = await TravelokaService.PreBooking(
+    train,
+    departureDate,
+    trackingSpec,
+  );
+
+  if (!preBooking || !preBooking.trackingSpec) {
+    throw new TravelokaServiceError("No pre-booking data returned");
   }
+
+  trackingSpec = preBooking.trackingSpec;
+
+  await delay(1500);
+
+  console.info(
+    `Creating booking for train ${train.trainBrandLabel} ${train.ticketLabel} ...`,
+  );
+
+  const booking = await TravelokaService.CreateBooking(
+    passenger,
+    train,
+    departureDate,
+    trackingSpec,
+  );
+
+  if (!booking) {
+    throw new TravelokaServiceError("No booking data returned");
+  }
+
+  trackingSpec = booking.trackingSpec;
+
+  if (!booking.invoiceId || !booking.auth || !booking.payAuth) {
+    throw new TravelokaServiceError("Failed to get booking details");
+  }
+
+  await delay(500);
+
+  console.info(`Opening payment page for invoice ${booking.invoiceId} ...`);
+
+  await TravelokaService.openPaymentPageInBrowser(
+    booking.invoiceId,
+    booking.auth,
+    booking.payAuth,
+  );
 };
 
 export const TravelokaService = {
@@ -176,7 +243,9 @@ export const TravelokaService = {
     numOfInfant = 0,
   ) {
     if (!originCode || !destinationCode || !departureDate) {
-      throw new Error("Missing required parameters for GetTrains");
+      throw new TravelokaServiceError(
+        "Missing required parameters for GetTrains",
+      );
     }
 
     const url = `${travelokaConfig.baseApiUrl}/train/search/inventoryv2`;
@@ -208,14 +277,31 @@ export const TravelokaService = {
       json: payload,
     });
 
-    if (!response || !response.ok) {
-      return [];
+    console.info(`API response: ${response.url} ${response.statusCode}`);
+
+    if (response?.ok) {
+      refreshCookies(response);
+
+      const resJson = response.body;
+
+      if (resJson?.data) {
+        if (resJson.data.status?.toLowerCase() !== "successful") {
+          throw new TravelokaServiceError(resJson.data.status.dialog?.message, {
+            response: response,
+            shouldContinue: false,
+          });
+        }
+
+        return resJson.data.departTrainInventories || [];
+      }
+    } else if (response?.statusCode === 202) {
+      throw new TravelokaServiceError("Rate limited, please try again later", {
+        response: response,
+        shouldContinue: false,
+      });
     }
 
-    refreshCookies(response);
-
-    const resJson = response.body;
-    return resJson?.data?.departTrainInventories || [];
+    return [];
   },
 
   /**
@@ -282,16 +368,31 @@ export const TravelokaService = {
 
     console.info(`API response: ${response.url} ${response.statusCode}`);
 
-    if (response && response.ok) {
+    if (response?.ok) {
       refreshCookies(response);
 
       const resJson = response.body;
       if (resJson?.data) {
+        if (resJson.data.status.code.toLowerCase() !== "ok") {
+          throw new TravelokaServiceError(resJson.data.status.dialog?.message, {
+            response: response,
+            shouldContinue: false,
+          });
+        }
+
         return resJson.data;
       }
+    } else if (response?.statusCode === 202) {
+      throw new TravelokaServiceError("Rate limited, please try again later", {
+        response: response,
+        shouldContinue: false,
+      });
     }
 
-    throw new Error("Failed to pre-booking");
+    throw new TravelokaServiceError("Failed to pre-booking", {
+      response: response,
+      shouldContinue: false,
+    });
   },
 
   /**
@@ -425,16 +526,31 @@ export const TravelokaService = {
 
     console.info(`API response: ${response.url} ${response.statusCode}`);
 
-    if (response && response.ok) {
+    if (response?.ok) {
       refreshCookies(response);
 
       const resJson = response.body;
       if (resJson?.data) {
+        if (resJson.data.status.code?.toLowerCase() !== "ok") {
+          throw new TravelokaServiceError(resJson.data.status.dialog?.message, {
+            response: response,
+            shouldContinue: false,
+          });
+        }
+
         return resJson.data;
       }
+    } else if (response?.statusCode === 202) {
+      throw new TravelokaServiceError("Rate limited, please try again later", {
+        response: response,
+        shouldContinue: false,
+      });
     }
 
-    throw new Error("Failed to create booking");
+    throw new TravelokaServiceError("Failed to create booking", {
+      response: response,
+      shouldContinue: false,
+    });
   },
 
   /**
@@ -466,7 +582,7 @@ export const TravelokaService = {
    * @param {{
    *  origin: string,
    *  destination: string,
-   *  departureDate: string,
+   *  departureDate: DateTime,
    *  trainNames: string[],
    *  minPrice: number,
    *  maxPrice: number,
@@ -492,20 +608,10 @@ export const TravelokaService = {
   ) {
     let exitCode = 0;
 
-    if (options.minPrice && typeof options.minPrice !== "number") {
-      options.minPrice = Number(options.minPrice);
-    }
+    const departureDate = options.departureDate;
 
-    if (options.maxPrice && typeof options.maxPrice !== "number") {
-      options.maxPrice = Number(options.maxPrice);
-    }
-
-    console.log(options);
-
-    const departureDate = DateTime.fromISO(options.departureDate);
-
-    console.log(
-      `Fetching trains from ${options.origin} to ${options.destination} on ${departureDate.toLocaleString(DateTime.DATETIME_MED)} ...`,
+    console.info(
+      `Fetching trains from ${options.origin} to ${options.destination} at ${departureDate.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)} ...`,
     );
 
     let trains = await this.GetTrains(
@@ -514,14 +620,14 @@ export const TravelokaService = {
       departureDate,
     );
 
-    console.log(`Processing ${trains.length} trains`);
+    console.info(`Processing ${trains.length} trains`);
 
     trains = trains.filter(
       (train) => train.availability.toLowerCase() === "available",
     );
 
     if (options.trainNames && options.trainNames.length > 0) {
-      console.log(
+      console.info(
         `Filtering trains by names: ${options.trainNames.join(", ")}`,
       );
       trains = trains.filter((train) => {
@@ -536,12 +642,12 @@ export const TravelokaService = {
     }
 
     if (options.onlyDirect) {
-      console.log("Filtering direct trains only");
+      console.info("Filtering direct trains only");
       trains = trains.filter((train) => Number(train.numTransits) === 0);
     }
 
     if (options.minPrice || options.maxPrice) {
-      console.log(
+      console.info(
         `Filtering by price: ${options.minPrice} - ${options.maxPrice}`,
       );
       trains = trains.filter(
@@ -554,7 +660,7 @@ export const TravelokaService = {
     }
 
     if (options.departTimes && options.departTimes.length > 0) {
-      console.log(
+      console.info(
         `Filtering by depart times: ${options.departTimes.join(", ")}`,
       );
       let tempTrains = [];
@@ -661,101 +767,31 @@ export const TravelokaService = {
         break;
     }
 
-    console.log(`Found ${trains.length} available trains`);
+    console.info(`Found ${trains.length} available trains`);
+
+    if (options.randomPick && trains.length > 1) {
+      trains = [trains[Math.floor(Math.random() * trains.length)]];
+    } else if (options.pickFirst && trains.length > 1) {
+      trains = [trains[0]];
+    }
 
     let success = false;
     for (const train of trains) {
       await delay(1000);
-
-      let hourMinute = train.departureTime.hourMinute;
-      const departHour = String(hourMinute.hour).padStart(2, "0");
-      const departMinute = String(hourMinute.minute).padStart(2, "0");
-
-      hourMinute = train.arrivalTime.hourMinute;
-      const arrivalHour = String(hourMinute.hour).padStart(2, "0");
-      const arrivalMinute = String(hourMinute.minute).padStart(2, "0");
-
-      const departTime = `${departHour}:${departMinute}`;
-      const arrivalTime = `${arrivalHour}:${arrivalMinute}`;
-
-      console.log(
-        `[${departTime} - ${arrivalTime}] [${train.ticketLabel}] ${train.trainBrandLabel} - Price: ${train.fare.currencyValue.amount}`,
-      );
-
       try {
-        let trackingSpec = {
-          contexts: {},
-          searchId: generateRandomString(9),
-          marketingContexts: {
-            ga_id: null,
-            fbp: null,
-          },
-          marketingContextCapsule: {
-            amplitude_session_id: null,
-            ga_session_id: null,
-            ga_client_id: null,
-            amplitude_device_id: null,
-            fb_browser_id_fbp: null,
-            referrer_url: null,
-            page_full_url: null,
-            client_user_agent: null,
-          },
-        };
-
-        const preBooking = await this.PreBooking(
-          train,
-          departureDate,
-          trackingSpec,
-        );
-
-        if (!preBooking || !preBooking.trackingSpec) {
-          throw new Error("No pre-booking data returned");
-        }
-
-        trackingSpec = preBooking.trackingSpec;
-
-        await delay(500);
-
-        console.log(
-          `Creating booking for train ${train.trainBrandLabel} ${train.ticketLabel} ...`,
-        );
-
-        const booking = await this.CreateBooking(
-          passenger,
-          train,
-          departureDate,
-          trackingSpec,
-        );
-
-        if (!booking) {
-          throw new Error("No booking data returned");
-        }
-
-        trackingSpec = booking.trackingSpec;
-
-        if (!booking.invoiceId || !booking.auth || !booking.payAuth) {
-          throw new Error("Failed to get booking details");
-        }
-
-        await delay(500);
-
-        console.log(
-          `Opening payment page for invoice ${booking.invoiceId} ...`,
-        );
-
-        await this.openPaymentPageInBrowser(
-          booking.invoiceId,
-          booking.auth,
-          booking.payAuth,
-        );
+        await autoBookTrainTicket(passenger, train, departureDate);
 
         success = true;
         break;
       } catch (error) {
-        console.error(error.message);
-        console.log(
+        console.error(error.stack);
+        console.info(
           `Failed to book train ${train.trainBrandLabel} ${train.ticketLabel}`,
         );
+
+        if (error.shouldContinue === false) {
+          break;
+        }
       }
     }
 
@@ -763,29 +799,24 @@ export const TravelokaService = {
       exitCode = 1;
     }
 
-    console.log("Done");
+    console.info("Done");
 
     return exitCode;
   },
 };
 
-export class Passenger {
-  /**
-   *
-   * @param {string} title
-   * @param {string} fullName
-   * @param {string} email
-   * @param {string} nationalID
-   * @param {{
-   *  countryCode: string,
-   *  nationalNumber: string
-   * }} phoneNumber
-   */
-  constructor(title, fullName, email, nationalID, phoneNumber) {
-    this.Title = title;
-    this.FullName = fullName;
-    this.Email = email;
-    this.NationalID = nationalID;
-    this.PhoneNumber = phoneNumber;
+class TravelokaServiceError extends Error {
+  shouldContinue;
+  response;
+
+  constructor(message, { response, shouldContinue } = {}) {
+    super(message);
+    if (shouldContinue === undefined || shouldContinue === null) {
+      shouldContinue = true;
+    }
+
+    this.name = "TravelokaServiceError";
+    this.response = response ? response : null;
+    this.shouldContinue = shouldContinue;
   }
 }
